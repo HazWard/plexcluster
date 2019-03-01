@@ -7,8 +7,9 @@ const (
 	Docker
 )
 
-type TranscoderRegisterInfo struct {
-	Name string
-	Port int
-	Type TranscoderType
+type TranscoderInfo struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int `json:"port"`
+	Type TranscoderType `json:"type"`
 }

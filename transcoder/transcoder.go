@@ -57,7 +57,7 @@ func runJob(job types.Job) {
 	log.Printf("Job '%s' finished with error: %v", job.ID, err)
 }
 
-// Run registers a transcoder and starts up an endpoint to receive jobs from a loadbalancer
+// Run registers a transcoder and starts up an endpoint to receive jobs from a load balancer
 func Run(loadBalancerAddr string, transcoderType types.TranscoderType) {
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -70,7 +70,7 @@ func Run(loadBalancerAddr string, transcoderType types.TranscoderType) {
 	}
 	listeningPort := listener.Addr().(*net.TCPAddr).Port
 
-	info := types.TranscoderRegisterInfo{
+	info := types.TranscoderInfo{
 		Name: name,
 		Port: listeningPort,
 		Type: transcoderType,
@@ -80,10 +80,10 @@ func Run(loadBalancerAddr string, transcoderType types.TranscoderType) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	loadBalancerTranscoderURL := fmt.Sprintf("http://%s/transcoders", loadBalancerAddr)
-	resp, err := webClient.Post(loadBalancerTranscoderURL, "application/json", bytes.NewReader(data))
+	loadBalancerTranscoderRegistrationURL := fmt.Sprintf("http://%s/transcoders", loadBalancerAddr)
+	resp, err := webClient.Post(loadBalancerTranscoderRegistrationURL, "application/json", bytes.NewReader(data))
 	defer resp.Body.Close()
-	if err != nil || resp.StatusCode != http.StatusOK{
+	if err != nil || resp.StatusCode != http.StatusOK {
 		log.Fatalf("could not register transcoder: %s | %v", err, resp)
 	}
 	transcoderKey, _ := ioutil.ReadAll(resp.Body)
@@ -100,7 +100,7 @@ func Run(loadBalancerAddr string, transcoderType types.TranscoderType) {
 		}
 		resp, err := webClient.Do(req)
 		defer resp.Body.Close()
-		if err != nil || resp.StatusCode != http.StatusOK{
+		if err != nil || resp.StatusCode != http.StatusOK {
 			log.Fatalf("could not remove transcoder: %s | %v", err, resp)
 		}
 	}

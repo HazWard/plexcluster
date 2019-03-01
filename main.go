@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/hazward/plexcluster/ffmpeg"
 	"github.com/hazward/plexcluster/loadbalancer"
 	"github.com/hazward/plexcluster/transcoder"
@@ -11,13 +12,28 @@ import (
 	"strings"
 )
 
-func main()  {
+func printUsage(programName string, flagsSet... *flag.FlagSet) {
+	fmt.Printf("Usage: %s [command] [flags] [transcode arguments]\n\n", programName)
+	fmt.Println("Commands:")
+	for _, command := range flagsSet {
+		fmt.Printf("%s\n", command.Name())
+		command.PrintDefaults()
+		fmt.Println()
+	}
+}
+
+func main() {
 	ffmpegCommand := flag.NewFlagSet("ffmpeg", flag.ExitOnError)
 	ffmpegLbHost := ffmpegCommand.String("loadbalancer", "localhost:4545", "host:port for transcoding load balancer")
 	transcoderCommand := flag.NewFlagSet("transcode", flag.ExitOnError)
 	transcoderLbHost := transcoderCommand.String("loadbalancer", "localhost:4545", "host:port for transcoding load balancer")
 	loadbalancerCommand := flag.NewFlagSet("loadbalancer", flag.ExitOnError)
 	lbPort := loadbalancerCommand.Int("port", 4545, "Port of load balancer")
+
+	if len(os.Args) < 3 {
+		printUsage(os.Args[0], ffmpegCommand, transcoderCommand, loadbalancerCommand)
+		os.Exit(2)
+	}
 
 	subCommand := os.Args[1]
 	switch subCommand {
@@ -41,6 +57,7 @@ func main()  {
 		log.Printf("loadbalancer on %d with: %s", *lbPort, os.Args[2:])
 	default:
 		log.Printf("%q is not valid command.\n", os.Args[1])
+		flag.Usage()
 		os.Exit(2)
 	}
 

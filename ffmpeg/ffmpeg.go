@@ -25,6 +25,9 @@ func runJob(job types.Job) {
 	log.Printf("Job '%s' finished with error: %v", job.ID, err)
 }
 
+// Run submits the current transcoding arguments args to the load balancer
+// for it to schedule the job. If the load balancer can't process the job,
+// the transcoding task is performed locally
 func Run(loadBalancerAddr string, args []string) {
 	h := sha256.New()
 	h.Write([]byte(strings.Join(args, "")))
@@ -38,7 +41,7 @@ func Run(loadBalancerAddr string, args []string) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	loadBalancerTranscoderURL := fmt.Sprintf("http://%s/transcoders", loadBalancerAddr)
+	loadBalancerTranscoderURL := fmt.Sprintf("http://%s/jobs", loadBalancerAddr)
 	resp, err := webClient.Post(loadBalancerTranscoderURL, "application/json", bytes.NewReader(data))
 	if err != nil || resp.StatusCode != http.StatusOK{
 		log.Fatalf("could submit job to loadbalancer, using local transcoder instead: %s | %v", err, resp)
