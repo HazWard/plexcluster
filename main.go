@@ -24,14 +24,12 @@ func printUsage(programName string, flagsSet... *flag.FlagSet) {
 
 func main() {
 	ffmpegCommand := flag.NewFlagSet("ffmpeg", flag.ExitOnError)
-	ffmpegLbHost := ffmpegCommand.String("loadbalancer", "localhost:4545", "host:port for transcoding load balancer")
+	ffmpegQueueURI := ffmpegCommand.String("queue", "", "Address for backing messaging queue")
 	transcoderCommand := flag.NewFlagSet("transcode", flag.ExitOnError)
-	transcoderLbHost := transcoderCommand.String("loadbalancer", "localhost:4545", "host:port for transcoding load balancer")
-	loadbalancerCommand := flag.NewFlagSet("loadbalancer", flag.ExitOnError)
-	lbPort := loadbalancerCommand.Int("port", 4545, "Port of load balancer")
+	transcoderQueueURI := transcoderCommand.String("queue", "", "Address for backing messaging queue")
 
 	if len(os.Args) < 3 {
-		printUsage(os.Args[0], ffmpegCommand, transcoderCommand, loadbalancerCommand)
+		printUsage(os.Args[0], ffmpegCommand, transcoderCommand)
 		os.Exit(2)
 	}
 
@@ -62,7 +60,7 @@ func main() {
 	}
 
 	if ffmpegCommand.Parsed() {
-		ffmpeg.Run(*ffmpegLbHost, ffmpegCommand.Args())
+		ffmpeg.Run(*ffmpegQueueURI, ffmpegCommand.Args())
 		return
 	}
 	if transcoderCommand.Parsed() {
@@ -71,16 +69,7 @@ func main() {
 		if strings.Compare(claim, "") != 0 {
 			transcoderType = types.Docker
 		}
-		transcoder.Run(*transcoderLbHost, transcoderType)
+		transcoder.Run(*transcoderQueueURI, transcoderType)
 		return
 	}
-
-	if !loadbalancerCommand.Parsed() {
-		err := loadbalancerCommand.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatalln(err)
-		}
-		log.Printf("loadbalancer on %d with: %s", *lbPort, os.Args[2:])
-	}
-	loadbalancer.Run(*lbPort)
 }

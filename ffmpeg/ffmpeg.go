@@ -28,7 +28,7 @@ func runJob(job types.Job) {
 // Run submits the current transcoding arguments args to the load balancer
 // for it to schedule the job. If the load balancer can't process the job,
 // the transcoding task is performed locally
-func Run(loadBalancerAddr string, args []string) {
+func Run(queueAddr string, args []string) {
 	h := sha256.New()
 	h.Write([]byte(strings.Join(args, "")))
 	job := types.Job{
