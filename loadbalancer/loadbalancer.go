@@ -1,9 +1,12 @@
 package loadbalancer
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/boltdb/bolt"
 	"github.com/gorilla/mux"
+	"github.com/hazward/plexcluster/types"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +14,7 @@ import (
 )
 
 const defaultDBPath = "/tmp/plexcluster.db"
+const transcodersBucket = "transcoders"
 
 type LoggingHandler struct {
 	LoggerObj *log.Logger
@@ -45,7 +49,22 @@ func NewServer(port int, dbPath string, loggerObj *log.Logger) (*Server, error) 
 }
 
 func (s *Server) TranscoderRegisterHandler(w http.ResponseWriter, r *http.Request) {
+	var information types.TranscoderInfo
+	content, err := ioutil.ReadAll(r.Body)
+	if err != nil {
 
+	}
+	r.Body.Close()
+	err := json.Unmarshal(content, &information)
+	if err != nil {
+		fmt.Println("error:", err)
+	}
+
+	err = s.Database.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(transcodersBucket))
+		b.Put([]byte())
+		return nil
+	})
 }
 
 func (s *Server) TranscoderRemovalHandler(w http.ResponseWriter, r *http.Request) {
@@ -54,6 +73,16 @@ func (s *Server) TranscoderRemovalHandler(w http.ResponseWriter, r *http.Request
 
 func (s *Server) TranscodeJobSubmissionHandler(w http.ResponseWriter, r *http.Request) {
 
+}
+
+func (s *Server) InitBuckets() error {
+	return s.Database.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucket([]byte(transcodersBucket))
+		if err != nil {
+			return fmt.Errorf("unable to create transcodes bucket: %s", err)
+		}
+		return nil
+	})
 }
 
 func Run(port int) {
@@ -73,6 +102,11 @@ func Run(port int) {
 	router.HandleFunc("/jobs", server.TranscodeJobSubmissionHandler).Methods("POST")
 	router.HandleFunc("/transcoders/{id}", server.TranscoderRemovalHandler).Methods("DELETE")
 	router.HandleFunc("/transcoders", server.TranscoderRegisterHandler).Methods("POST")
+	logger.Println("Setting up database...")
+
+	if err := server.InitBuckets(); err != nil {
+		logger.Fatalf("error while setting up database: %s", err)
+	}
 
 	logger.Printf("Listening on 0.0.0.0:%d", server.Port)
 	srv := &http.Server{
