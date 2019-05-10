@@ -13,16 +13,16 @@ import (
 	"time"
 )
 
-var webClient = &http.Client{
-	Timeout: 10 * time.Second,
-}
-
 func runJob(job types.Job) {
 	log.Printf("Executing job '%s': %s", job.ID, job.Args)
 	cmd := exec.Command("/usr/lib/plexmediaserver/plex_transcoder", job.Args...)
 	log.Printf("Running command and waiting for it to finish...")
 	err := cmd.Run()
-	log.Printf("Job '%s' finished with error: %v", job.ID, err)
+	if err != nil {
+		log.Printf("Job '%s' finished with error: %v", job.ID, err)
+		return
+	}
+	log.Printf("Job '%s' finished successfully", job.ID)
 }
 
 // Run submits the current transcoding arguments args to the load balancer
@@ -32,7 +32,7 @@ func Run(queueAddr string, args []string) {
 	h := sha256.New()
 	h.Write([]byte(strings.Join(args, "")))
 	job := types.Job{
-		ID: fmt.Sprintf("job-%s", string(h.Sum(nil)[:8])),
+		ID: fmt.Sprintf("%s", string(h.Sum(nil)[:8])),
 		Args: args,
 		Expiry: time.Now().Add(1 * time.Minute),
 	}

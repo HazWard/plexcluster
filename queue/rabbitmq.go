@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/hazward/plexcluster/types"
 	"github.com/streadway/amqp"
+	"log"
 )
 
 type RabbitMQQueue struct {
@@ -14,7 +15,7 @@ type RabbitMQQueue struct {
 }
 
 
-func NewRabbitMQQueue(uri string, jobSubmissionQueueName, notificationQueueName string) (*RabbitMQQueue, error) {
+func NewRabbitMQQueue(uri, jobSubmissionQueueName, notificationQueueName string) (*RabbitMQQueue, error) {
 	conn, err := amqp.Dial(uri)
 	if err != nil {
 		return nil, err
@@ -65,4 +66,34 @@ func (r *RabbitMQQueue) Submit(job types.Job) error {
 
 func (r *RabbitMQQueue) WaitForCompletion(jobID string, found chan int) error {
 	return fmt.Errorf("unimplemented function")
+}
+
+func (r *RabbitMQQueue) ReceiveJob(handlerJob func([]byte, string, *amqp.Channel)) error {
+	msgs, err := r.queueChannel.Consume(
+		r.jobSubmissionRoutingKey, // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register consumer on queue: %s", err)
+	}
+
+	forever := make(chan bool)
+
+	go func() {
+		for d := range msgs {
+			log.Printf("Received a job: %s", d.Body)
+			handlerJob(d.Body, r.jobSubmissionRoutingKey, r.queueChannel)
+		}
+	}()
+	<-forever
+	return nil
+}
+
+func (r *RabbitMQQueue) SendNotification(id string) {
+
 }

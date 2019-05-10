@@ -1,0 +1,15 @@
+version: "3"
+services:
+  queues:
+    image: rabbitmq:3
+    hostname: plexqueues
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.1"
+          memory: 50M
+      restart_policy:
+        condition: on-failure
+    ports:
+      - "5672:5672"

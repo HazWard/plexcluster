@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/hazward/plexcluster/ffmpeg"
-	"github.com/hazward/plexcluster/loadbalancer"
 	"github.com/hazward/plexcluster/transcoder"
 	"github.com/hazward/plexcluster/types"
 	"log"
@@ -47,12 +46,6 @@ func main() {
 			log.Fatalln(err)
 		}
 		log.Println("transcode with:", os.Args[2:])
-	case "loadbalancer":
-		err := loadbalancerCommand.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatalln(err)
-		}
-		log.Printf("loadbalancer on %d with: %s", *lbPort, os.Args[2:])
 	default:
 		log.Printf("%q is not valid command.\n", os.Args[1])
 		flag.Usage()

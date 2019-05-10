@@ -1,52 +1,48 @@
 package transcoder
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/hazward/plexcluster/queue"
 	"github.com/hazward/plexcluster/types"
-	"io/ioutil"
+	"github.com/streadway/amqp"
 	"log"
-	"net"
-	"net/http"
-	"net/url"
-	"os"
 	"os/exec"
 	"time"
 )
 
-var webClient = &http.Client{
-	Timeout: 10 * time.Second,
-}
+const defaultJobSubmissionQueueName = "transcode_jobs"
+const defaultNotificationQueueName = "notifications"
 
-func handleJobRequest(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "POST":
+func handleJobRequest(body []byte, notificationQueue string, channel *amqp.Channel) {
 		var job types.Job
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		err = json.Unmarshal(body, &job)
+		err := json.Unmarshal(body, &job)
 		if err != nil {
 			log.Println(err)
 			return
 		}
 		if time.Now().After(job.Expiry) {
-			w.WriteHeader(403)
-			_, err = fmt.Fprintf(w, "Job '%s' discard because it expired", job.ID)
-			log.Println(err)
+			log.Println("Job '%s' discard because it expired", job.ID)
 			return
 		}
-		_, err = fmt.Fprintf(w, "Job '%s' received successfully", job.ID)
-		go runJob(job)
-		log.Println(err)
-	default:
-		w.WriteHeader(405)
-		_, err := fmt.Fprintf(w, "'%s' is not implemented, only POST is supported", r.Method)
-		log.Println(err)
+		log.Println("Job '%s' received successfully", job.ID)
+		runJob(job)
+
+	notification := fmt.Sprintf("Job: %s", job.ID)
+	err = channel.Publish(
+		"",     // exchange
+		notificationQueue, // routing key
+		false,  // mandatory
+		false,  // immediate
+		amqp.Publishing{
+			ContentType: "text/plain",
+			Body:        []byte(notification),
+		})
+	log.Printf(" [x] Sent nofitification for job '%s'", job.ID)
+	if err != nil {
+		log.Printf("failed to publish message '%s': %s", notification, err)
 	}
+
 }
 
 func runJob(job types.Job) {
@@ -54,58 +50,22 @@ func runJob(job types.Job) {
 	cmd := exec.Command("/usr/lib/plexmediaserver/plex_transcoder", job.Args...)
 	log.Printf("Running command and waiting for it to finish...")
 	err := cmd.Run()
-	log.Printf("Job '%s' finished with error: %v", job.ID, err)
+	if err != nil {
+		log.Printf("Job '%s' finished with error: %v", job.ID, err)
+		return
+	}
+	log.Printf("Job '%s' finished successfully", job.ID)
 }
 
-// Run registers a transcoder and starts up an endpoint to receive jobs from a load balancer
-func Run(loadBalancerAddr string, transcoderType types.TranscoderType) {
-	listener, err := net.Listen("tcp", ":0")
+// Run registers a transcoder and waits to receive jobs from job queue
+func Run(transcodeQueueURI string) {
+
+	transcodingQueue, err := queue.NewRabbitMQQueue(transcodeQueueURI, defaultJobSubmissionQueueName, defaultNotificationQueueName)
+	if err != nil {
+		log.Fatalf("failed to connect to queue '%s': %s", transcodeQueueURI, err)
+	}
+	err = transcodingQueue.ReceiveJob(handleJobRequest)
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	name, err := os.Hostname()
-	if err != nil {
-		log.Fatalln(err)
-	}
-	listeningPort := listener.Addr().(*net.TCPAddr).Port
-
-	info := types.TranscoderInfo{
-		Name: name,
-		Port: listeningPort,
-		Type: transcoderType,
-	}
-
-	data, err := json.Marshal(info)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	loadBalancerTranscoderRegistrationURL := fmt.Sprintf("http://%s/transcoders", loadBalancerAddr)
-	resp, err := webClient.Post(loadBalancerTranscoderRegistrationURL, "application/json", bytes.NewReader(data))
-	defer resp.Body.Close()
-	if err != nil || resp.StatusCode != http.StatusOK {
-		log.Fatalf("could not register transcoder: %s | %v", err, resp)
-	}
-	transcoderKey, _ := ioutil.ReadAll(resp.Body)
-
-	leaveHost := func() {
-		loadBalancerTranscoderURLString := fmt.Sprintf("http://%s/transcoders/%s", loadBalancerAddr, string(transcoderKey))
-		loadBalancerTranscoderURL, err := url.Parse(loadBalancerTranscoderURLString)
-		if err != nil {
-			log.Fatalf("could not generate transcoder removal URL: %s", err)
-		}
-		req := &http.Request{
-			Method: http.MethodDelete,
-			URL: loadBalancerTranscoderURL,
-		}
-		resp, err := webClient.Do(req)
-		defer resp.Body.Close()
-		if err != nil || resp.StatusCode != http.StatusOK {
-			log.Fatalf("could not remove transcoder: %s | %v", err, resp)
-		}
-	}
-	defer leaveHost()
-	fmt.Println("Listening on port:", listeningPort)
-	http.HandleFunc("/jobs", handleJobRequest)
-	log.Fatalln(http.Serve(listener, nil))
 }
