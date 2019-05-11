@@ -1,67 +1,52 @@
 package transcoder
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
+	"io"
+	"log"
+	"os"
+
+	"github.com/hazward/plexcluster/common"
 	pb "github.com/hazward/plexcluster/plexcluster"
 	"google.golang.org/grpc"
-	"github.com/streadway/amqp"
-	"log"
-	"os/exec"
-	"time"
 )
 
+func transcode(ctx context.Context, logger *log.Logger, client pb.TranscoderServiceClient) error {
+	logger.Println("Connected to transcoding server, awaiting jobs...")
+	id, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("unable to setup transcoder: %v", err)
+	}
 
-func handleJobRequest(body []byte, notificationQueue string, channel *amqp.Channel) {
-		var job types.Job
-		err := json.Unmarshal(body, &job)
+	stream, err := client.Transcode(ctx, &pb.WorkerStatus{WorkerId: id})
+	if err != nil {
+		return fmt.Errorf("error while job stream: %v", err)
+	}
+
+	for {
+		job, err := stream.Recv()
+		if err == io.EOF {
+			continue
+		}
 		if err != nil {
-			log.Println(err)
-			return
+			return fmt.Errorf("error while getting job: %v", err)
 		}
-		if time.Now().After(job.Expiry) {
-			log.Println("Job '%s' discard because it expired", job.ID)
-			return
-		}
-		log.Println("Job '%s' received successfully", job.ID)
-		runJob(job)
-
-	notification := fmt.Sprintf("Job: %s", job.ID)
-	err = channel.Publish(
-		"",     // exchange
-		notificationQueue, // routing key
-		false,  // mandatory
-		false,  // immediate
-		amqp.Publishing{
-			ContentType: "text/plain",
-			Body:        []byte(notification),
-		})
-	log.Printf(" [x] Sent nofitification for job '%s'", job.ID)
-	if err != nil {
-		log.Printf("failed to publish message '%s': %s", notification, err)
+		common.RunJob(logger, *job)
 	}
-
-}
-
-func runJob(job types.Job) {
-	log.Printf("Executing job '%s': %s", job.ID, job.Args)
-	cmd := exec.Command("/usr/lib/plexmediaserver/plex_transcoder", job.Args...)
-	log.Printf("Running command and waiting for it to finish...")
-	err := cmd.Run()
-	if err != nil {
-		log.Printf("Job '%s' finished with error: %v", job.ID, err)
-		return
-	}
-	log.Printf("Job '%s' finished successfully", job.ID)
+	return nil
 }
 
 // Run registers a transcoder and waits to receive jobs from job queue
-func Run(transcodeServer string, machineType pb.MachineType) {
-	connection, err := grpc.Dial(transcodeServer)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	c := pb.NewTranscoderServiceClient(connection)
+func Run(transcodeServer string) {
+	logger := log.New(os.Stdout, "[TRANSCODER] ", log.Ldate|log.Ltime)
 
-	c.Transcode()
+	connection, err := grpc.Dial(transcodeServer, grpc.WithInsecure())
+	if err != nil {
+		logger.Fatalln(err)
+	}
+
+	ctx := context.Background()
+	client := pb.NewTranscoderServiceClient(connection)
+	log.Fatal(transcode(ctx, logger, client))
 }
