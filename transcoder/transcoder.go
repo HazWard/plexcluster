@@ -3,16 +3,14 @@ package transcoder
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/hazward/plexcluster/queue"
-	"github.com/hazward/plexcluster/types"
+	pb "github.com/hazward/plexcluster/plexcluster"
+	"google.golang.org/grpc"
 	"github.com/streadway/amqp"
 	"log"
 	"os/exec"
 	"time"
 )
 
-const defaultJobSubmissionQueueName = "transcode_jobs"
-const defaultNotificationQueueName = "notifications"
 
 func handleJobRequest(body []byte, notificationQueue string, channel *amqp.Channel) {
 		var job types.Job
@@ -58,14 +56,12 @@ func runJob(job types.Job) {
 }
 
 // Run registers a transcoder and waits to receive jobs from job queue
-func Run(transcodeQueueURI string) {
-
-	transcodingQueue, err := queue.NewRabbitMQQueue(transcodeQueueURI, defaultJobSubmissionQueueName, defaultNotificationQueueName)
-	if err != nil {
-		log.Fatalf("failed to connect to queue '%s': %s", transcodeQueueURI, err)
-	}
-	err = transcodingQueue.ReceiveJob(handleJobRequest)
+func Run(transcodeServer string, machineType pb.MachineType) {
+	connection, err := grpc.Dial(transcodeServer)
 	if err != nil {
 		log.Fatalln(err)
 	}
+	c := pb.NewTranscoderServiceClient(connection)
+
+	c.Transcode()
 }

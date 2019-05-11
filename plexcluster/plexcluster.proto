@@ -1,0 +1,36 @@
+syntax = "proto3";
+package plexcluster;
+
+enum Status {
+    COMPLETED = 0;
+    ERROR = 1;
+}
+
+// JobRequest describes a transcoding job to be performed by a worker
+message JobRequest {
+    string id = 1;
+    repeated string args = 2;
+    int64 expiry = 3;
+}
+
+// JobStatus describes whether the transcoding task was completed
+message JobStatus {
+    string jobId = 1;
+    Status status = 2;
+}
+
+// WorkerStatus is tell the server what type of server
+// is requesting jobs and what's its current load
+message WorkerStatus {
+    float load = 1;
+    string workerId = 2;
+}
+
+service TranscoderService {
+
+    // SendJob submits a job  to be processed by a worker
+    rpc SendJob(JobRequest) returns (JobStatus);
+
+    // Transcode represents a worker subscribing to the master to receive jobs
+    rpc Transcode(stream WorkerStatus) returns (stream JobRequest);
+}

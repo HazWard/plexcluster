@@ -5,47 +5,60 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"github.com/hazward/plexcluster/types"
+	pb "github.com/hazward/plexcluster/plexcluster"
+	"google.golang.org/grpc"
 	"log"
+	"net"
 	"net/http"
 	"os/exec"
 	"strings"
 	"time"
 )
 
-func runJob(job types.Job) {
-	log.Printf("Executing job '%s': %s", job.ID, job.Args)
+type transcoderServer struct {
+
+}
+
+func (srv transcoderServer) Transcode(pb.TranscoderService_TranscodeServer) error {
+	panic("implement me")
+}
+
+func runJob(job pb.JobRequest) {
+	log.Printf("Executing job '%s': %s", job.Id, job.Args)
 	cmd := exec.Command("/usr/lib/plexmediaserver/plex_transcoder", job.Args...)
 	log.Printf("Running command and waiting for it to finish...")
 	err := cmd.Run()
 	if err != nil {
-		log.Printf("Job '%s' finished with error: %v", job.ID, err)
+		log.Printf("Job '%s' finished with error: %v", job.Id, err)
 		return
 	}
-	log.Printf("Job '%s' finished successfully", job.ID)
+	log.Printf("Job '%s' finished successfully", job.Id)
 }
 
-// Run submits the current transcoding arguments args to the load balancer
-// for it to schedule the job. If the load balancer can't process the job,
-// the transcoding task is performed locally
-func Run(queueAddr string, args []string) {
+func Run(serverAddr string, args []string) {
 	h := sha256.New()
 	h.Write([]byte(strings.Join(args, "")))
-	job := types.Job{
-		ID: fmt.Sprintf("%s", string(h.Sum(nil)[:8])),
+	job := pb.JobRequest{
+		Id: fmt.Sprintf("%s", string(h.Sum(nil)[:8])),
 		Args: args,
-		Expiry: time.Now().Add(1 * time.Minute),
+		Expiry: time.Now().Add(1 * time.Minute).Unix(),
 	}
 
-	data, err := json.Marshal(job)
+	srv := grpc.NewServer()
+	var transcodes transcoderServer
+	tokens := strings.Split(serverAddr, "://")
+	pb.RegisterTranscoderServiceServer(srv, transcodes)
+	l, err := net.Listen(tokens[0], tokens[1])
 	if err != nil {
-		log.Fatalln(err)
-	}
-	loadBalancerTranscoderURL := fmt.Sprintf("http://%s/jobs", loadBalancerAddr)
-	resp, err := webClient.Post(loadBalancerTranscoderURL, "application/json", bytes.NewReader(data))
-	if err != nil || resp.StatusCode != http.StatusOK{
-		log.Fatalf("could submit job to loadbalancer, using local transcoder instead: %s | %v", err, resp)
+		log.Printf("could not listen to %s: %v", tokens[1], err)
+		log.Print("using local transcoder instead")
 		runJob(job)
+	} else {
+		err = srv.Serve(l)
+		if err != nil {
+			runJob(job)
+		}
 	}
+
 	time.Sleep(1 * time.Hour)
 }

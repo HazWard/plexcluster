@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/hazward/plexcluster/ffmpeg"
 	"github.com/hazward/plexcluster/transcoder"
-	"github.com/hazward/plexcluster/types"
+	pb "github.com/hazward/plexcluster/plexcluster"
 	"log"
 	"os"
 	"strings"
@@ -23,9 +23,9 @@ func printUsage(programName string, flagsSet... *flag.FlagSet) {
 
 func main() {
 	ffmpegCommand := flag.NewFlagSet("ffmpeg", flag.ExitOnError)
-	ffmpegQueueURI := ffmpegCommand.String("queue", "", "Address for backing messaging queue")
+	ffmpegServerURL := ffmpegCommand.String("server", "", "Address for GRPC server")
 	transcoderCommand := flag.NewFlagSet("transcode", flag.ExitOnError)
-	transcoderQueueURI := transcoderCommand.String("queue", "", "Address for backing messaging queue")
+	transcoderServerURL := transcoderCommand.String("server", "", "Address for GRPC server")
 
 	if len(os.Args) < 3 {
 		printUsage(os.Args[0], ffmpegCommand, transcoderCommand)
@@ -53,16 +53,16 @@ func main() {
 	}
 
 	if ffmpegCommand.Parsed() {
-		ffmpeg.Run(*ffmpegQueueURI, ffmpegCommand.Args())
+		ffmpeg.Run(*ffmpegServerURL, ffmpegCommand.Args())
 		return
 	}
 	if transcoderCommand.Parsed() {
 		claim := strings.TrimSpace(os.Getenv("PLEX_CLAIM"))
-		transcoderType := types.BareMetal
+		transcoderType := pb.MachineType_BAREMETAL
 		if strings.Compare(claim, "") != 0 {
-			transcoderType = types.Docker
+			transcoderType = pb.MachineType_BAREMETAL
 		}
-		transcoder.Run(*transcoderQueueURI, transcoderType)
+		transcoder.Run(*transcoderServerURL, transcoderType)
 		return
 	}
 }
