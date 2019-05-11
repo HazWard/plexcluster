@@ -1,64 +1,54 @@
 package ffmpeg
 
 import (
-	"bytes"
+	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"fmt"
-	pb "github.com/hazward/plexcluster/plexcluster"
 	"google.golang.org/grpc"
 	"log"
-	"net"
-	"net/http"
-	"os/exec"
+	"os"
 	"strings"
 	"time"
+
+	"github.com/hazward/plexcluster/common"
+	pb "github.com/hazward/plexcluster/plexcluster"
 )
 
-type transcoderServer struct {
-
+func isErrorStatus(status *pb.JobStatus) bool {
+	return status != nil && status.Status == pb.Status_ERROR
 }
 
-func (srv transcoderServer) Transcode(pb.TranscoderService_TranscodeServer) error {
-	panic("implement me")
-}
-
-func runJob(job pb.JobRequest) {
-	log.Printf("Executing job '%s': %s", job.Id, job.Args)
-	cmd := exec.Command("/usr/lib/plexmediaserver/plex_transcoder", job.Args...)
-	log.Printf("Running command and waiting for it to finish...")
-	err := cmd.Run()
-	if err != nil {
-		log.Printf("Job '%s' finished with error: %v", job.Id, err)
-		return
+func sendJob(ctx context.Context, logger *log.Logger, client pb.TranscoderServiceClient, job pb.JobRequest) error {
+	logger.Printf("Sending job to server: %v", job)
+	status, err := client.SendJob(ctx, &job)
+	if err != nil || isErrorStatus(status) {
+		return fmt.Errorf("unable to setup transcoder: %v", err)
 	}
-	log.Printf("Job '%s' finished successfully", job.Id)
+	return nil
 }
 
-func Run(serverAddr string, args []string) {
+func Run(serverAddr string, args, env []string) {
+	logger := log.New(os.Stdout, "[FFMPEG] ", log.Ldate|log.Ltime)
+
 	h := sha256.New()
 	h.Write([]byte(strings.Join(args, "")))
 	job := pb.JobRequest{
-		Id: fmt.Sprintf("%s", string(h.Sum(nil)[:8])),
-		Args: args,
+		Id:     fmt.Sprintf("%x", h.Sum(nil)[:8]),
+		Args:   args,
 		Expiry: time.Now().Add(1 * time.Minute).Unix(),
+		Env:    env,
 	}
 
-	srv := grpc.NewServer()
-	var transcodes transcoderServer
-	tokens := strings.Split(serverAddr, "://")
-	pb.RegisterTranscoderServiceServer(srv, transcodes)
-	l, err := net.Listen(tokens[0], tokens[1])
+	ctx := context.Background()
+	connection, err := grpc.Dial(serverAddr, grpc.WithInsecure())
 	if err != nil {
-		log.Printf("could not listen to %s: %v", tokens[1], err)
-		log.Print("using local transcoder instead")
-		runJob(job)
-	} else {
-		err = srv.Serve(l)
-		if err != nil {
-			runJob(job)
-		}
+		logger.Fatalln(err)
 	}
-
+	client := pb.NewTranscoderServiceClient(connection)
+	err = sendJob(ctx, logger, client, job)
+	if err != nil {
+		logger.Printf("error while sending job, running locally instead: %s", err)
+		common.RunJob(logger, job)
+	}
 	time.Sleep(1 * time.Hour)
 }

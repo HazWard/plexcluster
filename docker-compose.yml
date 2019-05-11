@@ -1,15 +1,66 @@
-version: "3"
+version: '2'
 services:
-  queues:
-    image: rabbitmq:3
-    hostname: plexqueues
-    deploy:
-      replicas: 1
-      resources:
-        limits:
-          cpus: "0.1"
-          memory: 50M
-      restart_policy:
-        condition: on-failure
+  plex:
+    build:
+      context: ./
+      dockerfile: docker/plex.Dockerfile
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
+    hostname: container
+    networks:
+      - "plexnet"
     ports:
-      - "5672:5672"
+      - 32400:32400/tcp
+      - 3005:3005/tcp
+      - 8324:8324/tcp
+      - 32469:32469/tcp
+      - 1900:1900/udp
+      - 32410:32410/udp
+      - 32412:32412/udp
+      - 32413:32413/udp
+      - 32414:32414/udp
+      - 8888:8888
+    environment:
+      - TZ=America/New_York
+      - REMOTE_TRANSCODER_SERVER=server:8888
+      - PLEX_CLAIM=<CLAIM>
+      - ADVERTISE_IP=<HOST_IP>
+      - ALLOWED_NETWORKS=172.33.0.0/16
+      - SERVER_URI=tcp://0.0.0.0:8888
+    volumes:
+      - /tmp/plex/config:/config
+      - /tmp/plex/transcode:/transcode
+      - /tmp/plex/data:/data
+  worker:
+    build:
+      context: ./
+      dockerfile: docker/worker.Dockerfile
+    restart: unless-stopped
+    security_opt:
+      - seccomp:unconfined
+    cap_add:
+      - SYS_PTRACE
+    hostname: container
+    networks:
+      - "plexnet"
+    environment:
+      - REMOTE_TRANSCODER_SERVER=plex:8888
+      - PLEX_HOST=<HOST>
+      - TZ=America/New_York
+      - PLEX_CLAIM=<CLAIM>
+    volumes:
+      - /tmp/plex/config:/config
+      - /tmp/plex/transcode:/transcode
+      - /tmp/plex/data:/data
+    links:
+      - "plex"
+
+networks:
+  plexnet:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.33.0.0/16

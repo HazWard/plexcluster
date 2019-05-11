@@ -2,7 +2,7 @@ syntax = "proto3";
 package plexcluster;
 
 enum Status {
-    COMPLETED = 0;
+    SCHEDULED = 0;
     ERROR = 1;
 }
 
@@ -11,6 +11,7 @@ message JobRequest {
     string id = 1;
     repeated string args = 2;
     int64 expiry = 3;
+    repeated string env = 4;
 }
 
 // JobStatus describes whether the transcoding task was completed
@@ -22,8 +23,7 @@ message JobStatus {
 // WorkerStatus is tell the server what type of server
 // is requesting jobs and what's its current load
 message WorkerStatus {
-    float load = 1;
-    string workerId = 2;
+    string workerId = 1;
 }
 
 service TranscoderService {
@@ -32,5 +32,5 @@ service TranscoderService {
     rpc SendJob(JobRequest) returns (JobStatus);
 
     // Transcode represents a worker subscribing to the master to receive jobs
-    rpc Transcode(stream WorkerStatus) returns (stream JobRequest);
+    rpc Transcode(WorkerStatus) returns (stream JobRequest);
 }
